@@ -10,6 +10,3 @@ env/
 # OS
 .DS_Store
 Thumbs.db
-
-# output
-output/
