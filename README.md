@@ -1,17 +1,20 @@
-# EcourtScraper
-# ⚖️ eCourts Cause List Scraper
+#  eCourts Cause List Scraper
 
-Small CLI tool to download **district court cause lists** from eCourts and save them as PDF + JSON metadata.
+A Python-based scraper that fetches **district court cause lists** from [eCourts](https://services.ecourts.gov.in/ecourtindia_v6/).
 
-## Features
-- Download district cause list (today/tomorrow)
-- Convert cause list HTML to a readable PDF
-- Save metadata (district, date, pdf path) as JSON
-- Simple CLI using `click`
+Built by **Tanishq Mahajan (J0KEP00L)** as part of an internship task.
 
-## Setup
+---
 
-1. Clone repo:
+##  Features
+- Fetch **today’s or tomorrow’s** cause list.
+- Extract **case serial numbers, names, and courts**.
+- Optionally **download PDF** version if available.
+- Save results as **JSON** for easy access.
+- CLI interface with simple flags.
+
+---
+
+##  Requirements
 ```bash
-git clone https://github.com/<your-username>/ecourts-causelist-scraper.git
-cd ecourts-causelist-scraper
+pip install -r requirements.txt
