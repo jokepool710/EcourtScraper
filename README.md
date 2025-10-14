@@ -13,8 +13,3 @@ Built by **Tanishq Mahajan (J0KEP00L)** as part of an internship task.
 - Save results as **JSON** for easy access.
 - CLI interface with simple flags.
 
----
-
-##  Requirements
-```bash
-pip install -r requirements.txt
