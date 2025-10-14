@@ -1,124 +1,117 @@
-#!/usr/bin/env python3
 """
-ecourts_causelist_scraper
-- Downloads district court cause lists from eCourts and saves as PDF + JSON metadata.
-- CLI: --district (required), --today / --tomorrow flags.
-Notes:
-- This is a simple HTML scraper converted to text-PDF using fpdf.
-- Some districts/pages may require adjustments to selectors or session handling.
+eCourts Cause List Scraper
+Author: Tanishq Mahajan (J0KEP00L)
+Date: October 2025
+Description:
+Fetches and downloads district court cause lists from https://services.ecourts.gov.in/
+and optionally stores them as PDFs or JSON for analysis.
 """
 
 import requests
 from bs4 import BeautifulSoup
-from fpdf import FPDF
-import datetime
-import os
 import json
-import click
-import sys
+import os
+import argparse
+from datetime import datetime, timedelta
 
-BASE_URL = "https://services.ecourts.gov.in/ecourtindia_v6/"
+# --- Constants ---
+BASE_URL = "https://services.ecourts.gov.in/ecourtindia_v6/?p=casestatus/index/"
+CAUSE_LIST_URL = "https://services.ecourts.gov.in/ecourtindia_v6/?p=caselist/index/"
 
-def ensure_output_dir():
-    os.makedirs("output", exist_ok=True)
-
-def fetch_cause_list_html(district):
+# --- Functions ---
+def fetch_cause_list(district: str, day: str = "today"):
     """
-    Fetch cause list HTML for a district.
-    NOTE: The actual eCourts site may require state/dist codes or different query params.
-    If this simple GET doesn't work for a district, you'll need to inspect the form on the site
-    and adapt params (or use Selenium for dynamic requests).
+    Fetches the cause list page for a given district and date (today/tomorrow).
     """
-    url = f"{BASE_URL}causelist/cause_list.php"
-    # simple attempt: pass a district name as dist_code param if the site accepts it
-    params = {"dist_code": district.lower()}
+    date = datetime.now().date() if day == "today" else datetime.now().date() + timedelta(days=1)
+    print(f"🔍 Fetching cause list for {district.title()} ({day.upper()}) — {date}")
+
+    params = {
+        "state_code": "26",   # Maharashtra code example
+        "dist_code": district.lower(),
+        "date": date.strftime("%d-%m-%Y")
+    }
+
     try:
-        resp = requests.get(url, params=params, timeout=20)
-        resp.raise_for_status()
-        return resp.text
+        response = requests.get(CAUSE_LIST_URL, params=params, timeout=15)
+        response.raise_for_status()
+        return response.text
     except Exception as e:
-        print(f"❌ Error while fetching cause list page: {e}")
+        print(f" Error fetching cause list: {e}")
         return None
 
-def parse_cause_list_text(html, district, formatted_date):
-    soup = BeautifulSoup(html, "html.parser")
-    # Title fallback
-    title_tag = soup.find("h4")
-    title = title_tag.text.strip() if title_tag else "Cause List"
-    # collect textual representation of tables (if any)
-    tables = soup.find_all("table")
-    content_lines = [title, "", f"District: {district.capitalize()}", f"Date: {formatted_date}", ""]
-    if not tables:
-        # no tables found: save the page text as fallback
-        page_text = soup.get_text(separator="\n").strip()
-        content_lines.append(page_text)
-        return content_lines
 
-    for idx, table in enumerate(tables, start=1):
-        # optional: include small header for each table
-        content_lines.append(f"--- Table {idx} ---")
-        for row in table.find_all("tr"):
-            cells = [c.text.strip() for c in row.find_all(["th", "td"])]
-            # join with " | " for readability in PDF
-            if cells:
-                content_lines.append(" | ".join([c for c in cells if c]))
-        content_lines.append("")  # blank line between tables
-    return content_lines
+def parse_cause_list(html_content: str):
+    """
+    Extracts case info and court names from HTML.
+    """
+    soup = BeautifulSoup(html_content, "html.parser")
+    table = soup.find("table")
 
-def save_text_as_pdf(lines, pdf_path):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    pdf.set_font("Arial", size=10)
-    for line in lines:
-        # ensure lines are strings
-        ln = str(line)
-        # multi_cell wraps long lines
-        pdf.multi_cell(0, 6, ln)
-    pdf.output(pdf_path)
+    if not table:
+        print(" No table found — likely no cause list for today.")
+        return []
 
-@click.command()
-@click.option("--district", required=True, help="District name or code (e.g., nashik)")
-@click.option("--today", is_flag=True, help="Download today's cause list")
-@click.option("--tomorrow", is_flag=True, help="Download tomorrow's cause list")
-def main(district, today, tomorrow):
-    ensure_output_dir()
+    data = []
+    rows = table.find_all("tr")[1:]  # skip header row
+    for row in rows:
+        cols = [col.text.strip() for col in row.find_all("td")]
+        if len(cols) >= 3:
+            data.append({
+                "serial_number": cols[0],
+                "case_number": cols[1],
+                "court_name": cols[2],
+            })
+    return data
 
-    if not (today or tomorrow):
-        print("⚠️  Use --today or --tomorrow to specify date. Defaulting to today.")
-    target_date = datetime.date.today() + datetime.timedelta(days=1 if tomorrow else 0)
-    formatted_date = target_date.strftime("%d-%m-%Y")
 
-    print(f"📅 Fetching cause list for {district.capitalize()} ({formatted_date}) ...")
+def save_to_json(data, filename):
+    """
+    Saves scraped cause list info to JSON file.
+    """
+    os.makedirs("sample_output", exist_ok=True)
+    filepath = os.path.join("sample_output", filename)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+    print(f" Saved JSON output → {filepath}")
 
-    html = fetch_cause_list_html(district)
-    if not html:
-        print("❌ Failed to fetch cause list HTML. Exiting.")
-        sys.exit(1)
 
-    lines = parse_cause_list_text(html, district, formatted_date)
-
-    # sanitize district name for filename
-    safe_district = "".join([c if c.isalnum() or c in ("_", "-") else "_" for c in district.lower()])
-    pdf_path = os.path.join("output", f"cause_list_{safe_district}_{formatted_date}.pdf")
-    json_path = os.path.join("output", f"cause_list_{safe_district}_{formatted_date}.json")
+def download_cause_list_pdf(district, day="today"):
+    """
+    Downloads cause list PDF if available.
+    """
+    date = datetime.now().date() if day == "today" else datetime.now().date() + timedelta(days=1)
+    pdf_url = f"https://services.ecourts.gov.in/ecourtindia_v6/?p=caselist/download/{district}/{date.strftime('%d-%m-%Y')}"
+    filename = f"sample_output/cause_list_{district}_{date}.pdf"
 
     try:
-        save_text_as_pdf(lines, pdf_path)
-        meta = {
-            "district": district,
-            "date": formatted_date,
-            "pdf_path": pdf_path,
-            "lines_count": len(lines)
-        }
-        with open(json_path, "w", encoding="utf-8") as jf:
-            json.dump(meta, jf, indent=2, ensure_ascii=False)
-
-        print(f"✅ Saved PDF: {pdf_path}")
-        print(f"💾 Saved metadata: {json_path}")
+        response = requests.get(pdf_url, timeout=20)
+        if "PDF" not in response.headers.get("Content-Type", ""):
+            print(" No PDF available for this date.")
+            return
+        with open(filename, "wb") as f:
+            f.write(response.content)
+        print(f"📥 Cause list PDF saved → {filename}")
     except Exception as e:
-        print(f"💥 Error saving outputs: {e}")
-        sys.exit(1)
+        print(f" Failed to download PDF: {e}")
 
+
+# --- CLI Handling ---
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="eCourts Cause List Scraper")
+    parser.add_argument("--district", type=str, required=True, help="District name (e.g., nashik, pune)")
+    parser.add_argument("--today", action="store_true", help="Fetch today's cause list")
+    parser.add_argument("--tomorrow", action="store_true", help="Fetch tomorrow's cause list")
+    parser.add_argument("--pdf", action="store_true", help="Download PDF version if available")
+
+    args = parser.parse_args()
+    day = "tomorrow" if args.tomorrow else "today"
+
+    html = fetch_cause_list(args.district, day)
+    if html:
+        parsed = parse_cause_list(html)
+        if parsed:
+            filename = f"cause_list_info_{args.district}_{day}.json"
+            save_to_json(parsed, filename)
+        if args.pdf:
+            download_cause_list_pdf(args.district, day)
